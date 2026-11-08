@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de lugares visitados</title>
+    <link rel="stylesheet" href="estilo.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+</head>
+
+<body>
+    <div class="dashboard">
+        <header class="encabezado">
+            <div>
+                <h1>Gestor de lugares visitados</h1>
+                <p>Organiza los lugares que has visitado</p>
+            </div>
+            <div class="resumen">
+                <span>Total de lugares</span>
+                <h2 id="totalLugares">0</h2>
+            </div>
+        </header>
+
+        <section class="panel-superior">
+            <div class="panel">
+                <h2>Agregar lugar</h2>
+                <form id="formulario">
+                    <label for="nombre">Nombre del lugar</label>
+                    <input type="text" id="nombre" placeholder="Ej: Parque Nacional" maxlength="60" required>
+                    <button type="submit">Agregar lugar</button>
+                </form>
+            </div>
+
+            <div class="panel">
+                <h2>Mi ubicación</h2>
+                <p id="ubicacion">Esperando ubicación...</p>
+                <div id="mapa"></div>
+                <button type="button" id="actualizarUbicacion">Actualizar ubicación</button>
+            </div>
+        </section>
+
+        <main class="columnas">
+            <section class="zona mis-lugares" id="zonaLugares">
+                <h2>Mis lugares <span id="cantidadLugares">0</span></h2>
+                <p>Arrastra las tarjetas a Favoritos</p>
+                <div class="lista-tarjetas" id="listaLugares"></div>
+            </section>
+
+            <section class="zona favoritos" id="zonaFavoritos">
+                <h2>Favoritos <span id="cantidadFavoritos">0</span></h2>
+                <p>Arrastra aquí tus lugares favoritos</p>
+                <div class="lista-tarjetas" id="listaFavoritos"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
