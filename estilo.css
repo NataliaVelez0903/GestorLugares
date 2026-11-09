@@ -125,7 +125,7 @@ canvas {
 .zona.arrastrando { outline: 3px dashed #64748b; outline-offset: -8px; }
 .vacio { text-align: center; padding: 25px; color: #64748b; }
 
-/* ---------- Aviso emergente ---------- */
+
 #aviso {
     position: fixed;
     bottom: 20px;
