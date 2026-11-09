@@ -1,119 +1,252 @@
+"use strict";
 
+/* =====================================================================
+   GESTOR DE LUGARES VISITADOS
+   Solo HTML5 + CSS + JavaScript puro (sin librerías ni servidor).
+
+   APIs nativas que usamos:
+   1. Drag & Drop de HTML5  -> arrastrar tarjetas a Favoritos
+   2. Geolocation API       -> obtener la ubicación del usuario
+   3. Canvas 2D             -> dibujar "mi ubicación" y los lugares
+   4. localStorage          -> recordar los datos en futuras sesiones
+
+   LÓGICA PROPIA DEL GRUPO 1:
+   - Validaciones: 3-40 caracteres, caracteres permitidos y sin nombres
+     repetidos (ignorando mayúsculas y tildes).
+   - Regla de negocio: máximo 5 favoritos.
+   - Se recuerda la última ubicación conocida si el GPS falla.
+===================================================================== */
+
+
+/* ---------------------------------------------------------------------
+   1. CONSTANTES Y ESTADO
+--------------------------------------------------------------------- */
+const CLAVE_LUGARES = "lugares";                    // clave en localStorage
+const CLAVE_POSICION = "gestorLugares.ultimaPosicion";
+const MAX_FAVORITOS = 5;
+const MIN_NOMBRE = 3;
+const MAX_NOMBRE = 40;
+
+const OPCIONES_GPS = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+
+// Referencias al DOM (se buscan una sola vez)
 const formulario = document.getElementById("formulario");
-const nombre = document.getElementById("nombre");
+const campoNombre = document.getElementById("nombre");
+const errorNombre = document.getElementById("errorNombre");
 const listaLugares = document.getElementById("listaLugares");
 const listaFavoritos = document.getElementById("listaFavoritos");
 const zonaLugares = document.getElementById("zonaLugares");
 const zonaFavoritos = document.getElementById("zonaFavoritos");
+const canvas = document.getElementById("canvasUbicacion");
+const aviso = document.getElementById("aviso");
 
-let lugares = JSON.parse(localStorage.getItem("lugares")) || [];
+// Estado de la aplicación
+let lugares = cargarJSON(CLAVE_LUGARES, []);   // [{id, nombre, favorito, fecha}]
+let posicion = cargarJSON(CLAVE_POSICION, null); // {lat, lng, accuracy, fecha} | null
 
-// Guardar los lugares
-function guardarLugares() {
-    localStorage.setItem("lugares", JSON.stringify(lugares));
+
+/* ---------------------------------------------------------------------
+   2. PERSISTENCIA (localStorage)
+--------------------------------------------------------------------- */
+
+// Lee y convierte de JSON. Si no existe o está dañado, devuelve el valor por defecto.
+function cargarJSON(clave, porDefecto) {
+    try {
+        const texto = localStorage.getItem(clave);
+        return texto ? JSON.parse(texto) : porDefecto;
+    } catch (error) {
+        return porDefecto;
+    }
 }
 
-// Agregar un lugar
-formulario.addEventListener("submit", function(evento) {
-    evento.preventDefault();
+function guardarJSON(clave, valor) {
+    try {
+        localStorage.setItem(clave, JSON.stringify(valor));
+    } catch (error) {
+        mostrarAviso("No se pudo guardar en este navegador.", true);
+    }
+}
 
-    const nuevoNombre = nombre.value.trim();
-    if (nuevoNombre === "") return;
+const guardarLugares = () => guardarJSON(CLAVE_LUGARES, lugares);
 
-    const lugar = {
+
+/* ---------------------------------------------------------------------
+   3. VALIDACIONES (funciones puras: reciben datos y devuelven un mensaje o null)
+--------------------------------------------------------------------- */
+
+// Quita tildes, pasa a minúscula y colapsa espacios: "  Café  Central " -> "cafe central"
+function normalizar(texto) {
+    return texto
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+// Devuelve el texto del error, o null si el nombre es válido.
+function validarNombre(texto) {
+    const limpio = texto.replace(/\s+/g, " ").trim();
+
+    if (limpio === "") return "Escribe el nombre del lugar.";
+    if (limpio.length < MIN_NOMBRE) return `Usa al menos ${MIN_NOMBRE} caracteres.`;
+    if (limpio.length > MAX_NOMBRE) return `Usa como máximo ${MAX_NOMBRE} caracteres.`;
+
+    // Debe empezar con letra o número; luego se permiten espacios y signos básicos.
+    if (!/^[\p{L}\p{N}][\p{L}\p{N} .,'&()-]*$/u.test(limpio)) {
+        return "Solo letras, números y . , ' & ( ) -";
+    }
+
+    const repetido = lugares.some(l => normalizar(l.nombre) === normalizar(limpio));
+    if (repetido) return "Ya registraste un lugar con ese nombre.";
+
+    return null;
+}
+
+function mostrarErrorNombre(texto) {
+    errorNombre.textContent = texto || "";
+    campoNombre.setAttribute("aria-invalid", texto ? "true" : "false");
+}
+
+
+/* ---------------------------------------------------------------------
+   4. TARJETAS: crear, mostrar, mover y eliminar
+--------------------------------------------------------------------- */
+
+function agregarLugar(nombre) {
+    lugares.push({
         id: Date.now(),
-        nombre: nuevoNombre,
-        favorito: false
-    };
-
-    lugares.push(lugar);
-    guardarLugares();
-    mostrarLugares();
-    formulario.reset();
-});
-
-// Mostrar las tarjetas
-function mostrarLugares() {
-    listaLugares.innerHTML = "";
-    listaFavoritos.innerHTML = "";
-
-    lugares.forEach(function(lugar) {
-        const tarjeta = document.createElement("div");
-        tarjeta.className = "tarjeta";
-        tarjeta.draggable = true;
-
-        const texto = document.createElement("strong");
-        texto.textContent = lugar.nombre;
-
-        const boton = document.createElement("button");
-        boton.textContent = "Eliminar";
-
-        boton.addEventListener("click", function() {
-            eliminarLugar(lugar.id);
-        });
-
-        tarjeta.appendChild(texto);
-        tarjeta.appendChild(boton);
-
-        tarjeta.addEventListener("dragstart", function(evento) {
-            evento.dataTransfer.setData("text/plain", String(lugar.id));
-        });
-
-        if (lugar.favorito) {
-            listaFavoritos.appendChild(tarjeta);
-        } else {
-            listaLugares.appendChild(tarjeta);
-        }
+        nombre: nombre.replace(/\s+/g, " ").trim(),
+        favorito: false,
+        fecha: new Date().toISOString()
     });
 
-    const cantidadFavoritos = lugares.filter(lugar => lugar.favorito).length;
-    const cantidadLugares = lugares.length - cantidadFavoritos;
-
-    document.getElementById("totalLugares").textContent = lugares.length;
-    document.getElementById("cantidadLugares").textContent = cantidadLugares;
-    document.getElementById("cantidadFavoritos").textContent = cantidadFavoritos;
-
-    if (cantidadLugares === 0) {
-        listaLugares.innerHTML = '<p class="vacio">No hay lugares registrados</p>';
-    }
-
-    if (cantidadFavoritos === 0) {
-        listaFavoritos.innerHTML = '<p class="vacio">No hay favoritos</p>';
-    }
-}
-
-// Eliminar un lugar
-function eliminarLugar(id) {
-    lugares = lugares.filter(lugar => lugar.id !== id);
     guardarLugares();
     mostrarLugares();
 }
 
-// Mover tarjetas entre las dos zonas
+function eliminarLugar(id) {
+    lugares = lugares.filter(l => l.id !== id);
+    guardarLugares();
+    mostrarLugares();
+}
+
+// REGLA DE NEGOCIO: no se pueden tener más de MAX_FAVORITOS.
+// Devuelve true si el movimiento se hizo.
+function moverLugar(id, aFavoritos) {
+    const lugar = lugares.find(l => l.id === id);
+    if (!lugar || lugar.favorito === aFavoritos) return false;
+
+    const totalFavoritos = lugares.filter(l => l.favorito).length;
+    if (aFavoritos && totalFavoritos >= MAX_FAVORITOS) {
+        mostrarAviso(`Solo puedes tener ${MAX_FAVORITOS} favoritos. Quita uno primero.`, true);
+        return false;
+    }
+
+    lugar.favorito = aFavoritos;
+    guardarLugares();
+    mostrarLugares();
+    return true;
+}
+
+// Crea un botón pequeño con su clase y su acción
+function crearBoton(texto, clase, alClick) {
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.textContent = texto;
+    boton.className = clase;
+    boton.addEventListener("click", alClick);
+    return boton;
+}
+
+// Construye el elemento HTML de una tarjeta
+function crearTarjeta(lugar) {
+    const tarjeta = document.createElement("div");
+    tarjeta.className = "tarjeta";
+    tarjeta.draggable = true;
+
+    const titulo = document.createElement("strong");
+    titulo.textContent = lugar.nombre;           // textContent evita inyectar HTML (XSS)
+
+    const fecha = new Date(lugar.fecha || lugar.id).toLocaleDateString("es-CO");
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `Registrado el ${fecha}`;
+
+    // Botones: alternativa al arrastre (celular / teclado)
+    const acciones = document.createElement("div");
+    acciones.className = "acciones";
+    if (lugar.favorito) {
+        acciones.appendChild(crearBoton("Quitar ★", "btn-quitar", () => moverLugar(lugar.id, false)));
+    } else {
+        acciones.appendChild(crearBoton("★ Favorito", "btn-fav", () => moverLugar(lugar.id, true)));
+    }
+    acciones.appendChild(crearBoton("Eliminar", "btn-eliminar", () => eliminarLugar(lugar.id)));
+
+    tarjeta.append(titulo, meta, acciones);
+
+    // Eventos de arrastre: guardamos el id en el "paquete" de datos del drag
+    tarjeta.addEventListener("dragstart", evento => {
+        evento.dataTransfer.setData("text/plain", String(lugar.id));
+        evento.dataTransfer.effectAllowed = "move";
+        tarjeta.classList.add("arrastrada");
+    });
+    tarjeta.addEventListener("dragend", () => tarjeta.classList.remove("arrastrada"));
+
+    return tarjeta;
+}
+
+// Vuelve a dibujar las dos columnas, los contadores y el canvas
+function mostrarLugares() {
+    listaLugares.replaceChildren();
+    listaFavoritos.replaceChildren();
+
+    lugares.forEach(lugar => {
+        (lugar.favorito ? listaFavoritos : listaLugares).appendChild(crearTarjeta(lugar));
+    });
+
+    const nFavoritos = lugares.filter(l => l.favorito).length;
+    const nLugares = lugares.length - nFavoritos;
+
+    document.getElementById("totalLugares").textContent = lugares.length;
+    document.getElementById("totalFavoritos").textContent = `${nFavoritos}/${MAX_FAVORITOS}`;
+    document.getElementById("cantidadLugares").textContent = nLugares;
+    document.getElementById("cantidadFavoritos").textContent = nFavoritos;
+
+    if (nLugares === 0) listaLugares.appendChild(crearVacio("No hay lugares registrados"));
+    if (nFavoritos === 0) listaFavoritos.appendChild(crearVacio("No hay favoritos"));
+
+    dibujarCanvas();
+}
+
+function crearVacio(texto) {
+    const p = document.createElement("p");
+    p.className = "vacio";
+    p.textContent = texto;
+    return p;
+}
+
+
+/* ---------------------------------------------------------------------
+   5. DRAG & DROP: las zonas reciben tarjetas
+--------------------------------------------------------------------- */
 function prepararZona(zona, esFavorito) {
-    zona.addEventListener("dragover", function(evento) {
+    // dragover: hay que cancelar el comportamiento por defecto para PERMITIR soltar
+    zona.addEventListener("dragover", evento => {
         evento.preventDefault();
         zona.classList.add("arrastrando");
     });
 
-    zona.addEventListener("dragleave", function(evento) {
-        if (!zona.contains(evento.relatedTarget)) {
-            zona.classList.remove("arrastrando");
-        }
+    zona.addEventListener("dragleave", evento => {
+        if (!zona.contains(evento.relatedTarget)) zona.classList.remove("arrastrando");
     });
 
-    zona.addEventListener("drop", function(evento) {
+    zona.addEventListener("drop", evento => {
         evento.preventDefault();
         zona.classList.remove("arrastrando");
-
         const id = Number(evento.dataTransfer.getData("text/plain"));
-        const lugar = lugares.find(lugar => lugar.id === id);
-
-        if (lugar) {
-            lugar.favorito = esFavorito;
-            guardarLugares();
-            mostrarLugares();
-        }
+        moverLugar(id, esFavorito);
     });
 }
 
@@ -121,115 +254,116 @@ prepararZona(zonaLugares, false);
 prepararZona(zonaFavoritos, true);
 
 
+/* ---------------------------------------------------------------------
+   6. FORMULARIO
+--------------------------------------------------------------------- */
+formulario.addEventListener("submit", evento => {
+    evento.preventDefault();                       // evita recargar la página
 
-/* =====================================
-   UBICACIÓN DEL USUARIO
-===================================== */
+    const error = validarNombre(campoNombre.value);
+    mostrarErrorNombre(error);
+    if (error) {
+        campoNombre.focus();
+        return;
+    }
 
-// Coordenadas iniciales de Manizales
-const CENTRO_INICIAL = [5.0689, -75.5174];
+    agregarLugar(campoNombre.value);
+    formulario.reset();
+    mostrarAviso("Lugar agregado.");
+});
 
-// Crear el mapa
-const mapa = L.map("mapa").setView(CENTRO_INICIAL, 13);
+// Al escribir se limpia el error para no molestar mientras corrige
+campoNombre.addEventListener("input", () => mostrarErrorNombre(null));
 
-// Agregar OpenStreetMap
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-}).addTo(mapa);
 
-// Configuración del GPS
-const OPCIONES_GPS = {
-    enableHighAccuracy: true,
-    timeout: 10000,
-    maximumAge: 0
-};
+/* ---------------------------------------------------------------------
+   7. AVISOS (reemplazo de alert)
+--------------------------------------------------------------------- */
+let temporizadorAviso = null;
 
-let marcadorUsuario = null;
-let circuloPrecision = null;
-let ultimaPosicion = null;
+function mostrarAviso(texto, esError = false) {
+    aviso.textContent = texto;
+    aviso.className = esError ? "error-aviso" : "";
+    aviso.hidden = false;
+    clearTimeout(temporizadorAviso);
+    temporizadorAviso = setTimeout(() => { aviso.hidden = true; }, 3500);
+}
 
-// Mostrar mensajes
+
+/* ---------------------------------------------------------------------
+   8. CANVAS: punto de "mi ubicación"
+--------------------------------------------------------------------- */
+
+function dibujarCanvas() {
+    const ctx = canvas.getContext("2d");
+    const ancho = canvas.width;
+    const alto = canvas.height;
+    const cx = ancho / 2;
+    const cy = alto / 2;
+
+    ctx.clearRect(0, 0, ancho, alto);
+    ctx.textAlign = "center";
+
+    // Sin ubicación: solo un mensaje
+    if (!posicion) {
+        ctx.fillStyle = "#64748b";
+        ctx.font = "18px Arial";
+        ctx.fillText("Activa la ubicación para ver tu punto", cx, cy);
+        return;
+    }
+
+    // Círculos decorativos alrededor del punto
+    ctx.strokeStyle = "#bfdbfe";
+    ctx.lineWidth = 1;
+    [40, 80, 120].forEach(r => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+
+    // MI UBICACIÓN: punto azul en el centro
+    ctx.beginPath();
+    ctx.arc(cx, cy, 20, 0, Math.PI * 2);
+    ctx.fillStyle = "#2563eb33";               // halo translúcido
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10, 0, Math.PI * 2);
+    ctx.fillStyle = "#2563eb";
+    ctx.fill();
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.fillStyle = "#1e293b";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText("Mi ubicación", cx, cy + 45);
+    ctx.font = "13px Arial";
+    ctx.fillStyle = "#64748b";
+    ctx.fillText(`${posicion.lat.toFixed(4)}, ${posicion.lng.toFixed(4)}`, cx, cy + 65);
+}
+
+
+/* ---------------------------------------------------------------------
+   9. GEOLOCALIZACIÓN
+--------------------------------------------------------------------- */
 function mostrarInfo(mensaje) {
     document.getElementById("ubicacion").textContent = mensaje;
 }
 
-// Manejar errores de ubicación
 function mensajeErrorGPS(error) {
     const mensajes = {
         1: "Permiso denegado. Activa la ubicación en el navegador.",
         2: "No se pudo determinar la ubicación.",
         3: "Se agotó el tiempo de espera."
     };
-
     return mensajes[error.code] || "Error desconocido de geolocalización.";
 }
 
-// Mostrar la ubicación en el mapa
-function pintarUbicacion(pos) {
-    const { latitude, longitude, accuracy } = pos.coords;
-
-    ultimaPosicion = {
-        lat: latitude,
-        lng: longitude,
-        accuracy
-    };
-
-    const lugar = [latitude, longitude];
-
-    // Eliminar marcador anterior
-    if (marcadorUsuario) {
-        mapa.removeLayer(marcadorUsuario);
-    }
-
-    // Eliminar círculo anterior
-    if (circuloPrecision) {
-        mapa.removeLayer(circuloPrecision);
-    }
-
-    // Crear marcador de ubicación
-    marcadorUsuario = L.marker(lugar)
-        .addTo(mapa)
-        .bindPopup("Mi ubicación");
-
-    // Crear círculo de precisión
-    circuloPrecision = L.circle(lugar, {
-        radius: accuracy,
-        color: "#2563eb",
-        fillOpacity: 0.15
-    }).addTo(mapa);
-
-    // Centrar mapa en el usuario
-    mapa.setView(lugar, 17);
-    marcadorUsuario.openPopup();
-
-    // Dibujar el punto en el canvas
-    dibujarCanvas();
+function textoPosicion(p) {
+    return `Latitud: ${p.lat.toFixed(6)} | Longitud: ${p.lng.toFixed(6)} | Precisión: ${Math.round(p.accuracy)} m`;
 }
 
-// Dibujar ubicación en el canvas
-function dibujarCanvas() {
-    const canvas = document.getElementById("canvasUbicacion");
-    const contexto = canvas.getContext("2d");
-
-    contexto.clearRect(0, 0, canvas.width, canvas.height);
-
-    const x = 65;
-    const y = canvas.height / 2;
-
-    contexto.beginPath();
-    contexto.arc(x, y, 9, 0, Math.PI * 2);
-    contexto.fillStyle = "#2563eb";
-    contexto.fill();
-
-    contexto.fillStyle = "#1e293b";
-    contexto.font = "15px Arial";
-    contexto.textAlign = "left";
-    contexto.fillText("Mi ubicación actual", x + 25, y + 5);
-}
-
-// Solicitar ubicación
-function solicitarUbicacion(alExito) {
+function ubicarUsuario() {
     if (!("geolocation" in navigator)) {
         mostrarInfo("Tu navegador no soporta geolocalización.");
         return;
@@ -238,32 +372,36 @@ function solicitarUbicacion(alExito) {
     mostrarInfo("Buscando tu ubicación...");
 
     navigator.geolocation.getCurrentPosition(
-        (pos) => {
-            pintarUbicacion(pos);
-            alExito(pos);
+        pos => {
+            posicion = {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+                fecha: new Date().toISOString()
+            };
+            guardarJSON(CLAVE_POSICION, posicion);   // se recuerda para la próxima sesión
+            mostrarInfo(textoPosicion(posicion));
+            dibujarCanvas();                         // redibuja el punto con la nueva posición
         },
-        (error) => {
-            mostrarInfo(mensajeErrorGPS(error));
+        error => {
+            // Si falló pero hay una posición guardada, la usamos avisando que es antigua
+            if (posicion) {
+                const hora = new Date(posicion.fecha).toLocaleString("es-CO");
+                mostrarInfo(`${mensajeErrorGPS(error)} Última ubicación conocida (${hora}): ${textoPosicion(posicion)}`);
+            } else {
+                mostrarInfo(mensajeErrorGPS(error));
+            }
+            dibujarCanvas();
         },
         OPCIONES_GPS
     );
 }
 
-// Ubicar al usuario
-function ubicarUsuario() {
-    solicitarUbicacion((pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
+document.getElementById("actualizarUbicacion").addEventListener("click", ubicarUsuario);
 
-        mostrarInfo(
-            `Latitud: ${latitude.toFixed(6)} | Longitud: ${longitude.toFixed(6)} | Precisión: ${Math.round(accuracy)} m`
-        );
-    });
-}
 
-// Botón para actualizar ubicación
-document.getElementById("actualizarUbicacion")
-    .addEventListener("click", ubicarUsuario);
-
-// Iniciar aplicación
+/* ---------------------------------------------------------------------
+   10. INICIO
+--------------------------------------------------------------------- */
 mostrarLugares();
 ubicarUsuario();
