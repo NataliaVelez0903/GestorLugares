@@ -6,45 +6,59 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestor de lugares visitados</title>
     <link rel="stylesheet" href="estilo.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-
 </head>
 
 <body>
     <div class="dashboard">
+
+        <!-- ENCABEZADO + CONTADORES -->
         <header class="encabezado">
             <div>
                 <h1>Gestor de lugares visitados</h1>
-                <p>Organiza los lugares que has visitado</p>
+                <p>Registra los lugares que has visitado y escoge tus favoritos.</p>
             </div>
-            <div class="resumen">
-                <span>Total de lugares</span>
-                <h2 id="totalLugares">0</h2>
+            <div class="resumenes">
+                <div class="resumen">
+                    <span>Total de lugares</span>
+                    <h2 id="totalLugares">0</h2>
+                </div>
+                <div class="resumen resumen-fav">
+                    <span>Favoritos (máx. 5)</span>
+                    <h2 id="totalFavoritos">0/5</h2>
+                </div>
             </div>
         </header>
 
+        <!-- FORMULARIO + UBICACIÓN/CANVAS -->
         <section class="panel-superior">
             <div class="panel">
                 <h2>Agregar lugar</h2>
-                <form id="formulario">
+                <form id="formulario" novalidate>
                     <label for="nombre">Nombre del lugar</label>
-                    <input type="text" id="nombre" placeholder="Ej: Parque Nacional" maxlength="60" required>
+                    <input type="text" id="nombre" placeholder="Ej: Parque Nacional" maxlength="40"
+                        autocomplete="off" aria-describedby="errorNombre">
+                    <p id="errorNombre" class="error" aria-live="polite"></p>
+
                     <button type="submit">Agregar lugar</button>
                 </form>
+                <p class="ayuda">Reglas: 3 a 40 caracteres, sin repetir nombres y máximo 5 favoritos.</p>
             </div>
 
             <div class="panel">
                 <h2>Mi ubicación</h2>
                 <p id="ubicacion">Esperando ubicación...</p>
-                <div id="mapa"></div>
+                <!-- Aquí se dibuja el punto "mi ubicación" -->
+                <canvas id="canvasUbicacion" width="640" height="340"
+                    aria-label="Punto que representa mi ubicación" role="img"></canvas>
                 <button type="button" id="actualizarUbicacion">Actualizar ubicación</button>
             </div>
         </section>
 
+        <!-- DOS COLUMNAS: MIS LUGARES / FAVORITOS -->
         <main class="columnas">
             <section class="zona mis-lugares" id="zonaLugares">
                 <h2>Mis lugares <span id="cantidadLugares">0</span></h2>
-                <p>Arrastra las tarjetas a Favoritos</p>
+                <p>Arrastra las tarjetas a Favoritos (o usa el botón ★)</p>
                 <div class="lista-tarjetas" id="listaLugares"></div>
             </section>
 
@@ -56,7 +70,9 @@
         </main>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Mensajes cortos (reemplaza a alert) -->
+    <div id="aviso" role="status" aria-live="polite" hidden></div>
+
     <script src="app.js"></script>
 </body>
 
