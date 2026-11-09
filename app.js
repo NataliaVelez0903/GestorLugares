@@ -41,7 +41,7 @@ const canvas = document.getElementById("canvasUbicacion");
 const aviso = document.getElementById("aviso");
 
 // Estado de la aplicación
-let lugares = cargarJSON(CLAVE_LUGARES, []);   // [{id, nombre, favorito, fecha}]
+let lugares = cargarJSON(CLAVE_LUGARES, []);   // [{id, nombre, favorito, lat, lng, fecha}]
 let posicion = cargarJSON(CLAVE_POSICION, null); // {lat, lng, accuracy, fecha} | null
 
 
@@ -118,6 +118,9 @@ function agregarLugar(nombre) {
         id: Date.now(),
         nombre: nombre.replace(/\s+/g, " ").trim(),
         favorito: false,
+        // Copiamos las coordenadas actuales (si las hay) para recordar dónde se registró
+        lat: posicion ? posicion.lat : null,
+        lng: posicion ? posicion.lng : null,
         fecha: new Date().toISOString()
     });
 
@@ -168,11 +171,15 @@ function crearTarjeta(lugar) {
     const titulo = document.createElement("strong");
     titulo.textContent = lugar.nombre;           // textContent evita inyectar HTML (XSS)
 
-    const fecha = new Date(lugar.fecha || lugar.id).toLocaleDateString("es-CO");
+    // Fecha y hora de registro, y coordenadas resumidas (4 decimales ≈ 11 m)
+    const fecha = new Date(lugar.fecha || lugar.id).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
+    const coordenadas = typeof lugar.lat === "number" && typeof lugar.lng === "number"
+        ? `${lugar.lat.toFixed(4)}, ${lugar.lng.toFixed(4)}`
+        : "sin ubicación";
 
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = `Registrado el ${fecha}`;
+    meta.textContent = `${fecha} · ${coordenadas}`;
 
     // Botones: alternativa al arrastre (celular / teclado)
     const acciones = document.createElement("div");
